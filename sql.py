@@ -5,10 +5,10 @@ import traceback
 class Client:
     def __init__(self):
         self.driver = mysql.connect(
-            host = "REDACTED",
-            user = "REDACTED",
-            passwd = "REDACTED",
-            db="tas"
+            host = "***",
+            user = "***",
+            passwd = "***",
+            db="***"
         )
         self.cursor = self.driver.cursor(buffered=True)
 
@@ -245,115 +245,52 @@ class Client:
 
         if category == 'embassy':
             if set(valuesDict.keys()).issubset(['address', 'phone']):
-                statement = "UPDATE `embassy` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "embassy", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'assistance':
             if set(valuesDict.keys()).issubset(['emergencyPhone']):
-                statement = "UPDATE `assistance` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "assistance", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'safetyandsecurity':
             if set(valuesDict.keys()).issubset(['crimeRate', 'flightSafety', 'roadSafety']):
-                statement = "UPDATE `safety_and_security` SET "
-                argCount = 1
                 for key in valuesDict:
                     if valuesDict[key] not in ['Low', 'Medium', 'High']:
                         return jsonify({"error": "Invalid risk level. Must be one of: Low, Medium, High."}), 400
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "safety_and_security", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'lawsandculture':
             if set(valuesDict.keys()).issubset(['laws', 'culture']):
-                statement = "UPDATE `laws_and_culture` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "laws_and_culture", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'naturaldisasterandclimate':
             if set(valuesDict.keys()).issubset(['disaster', 'climate']):
-                statement = "UPDATE `disaster_and_climate` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "disaster_and_climate", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'entryandexit':
             if set(valuesDict.keys()).issubset(['requirements']):
-                statement = "UPDATE `entry_and_exit` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "entry_and_exit", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'health':
             if set(valuesDict.keys()).issubset(['diseases', 'vaccines']):
-                statement = "UPDATE `health` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "health", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'tourism':
             if set(valuesDict.keys()).issubset(['placesOfInterest', 'topActivites', 'industryDescription']):
-                statement = "UPDATE `tourism` SET "
-                argCount = 1
-                for key in valuesDict:
-                    statement += "`%s`='%s'" % (key, valuesDict[key])
-                    if argCount < len(valuesDict):
-                        statement += ","
-                    argCount += 1
-                statement += " WHERE `country` = '%s';" % country;
-                print(statement)
+                statement = self.build_query(country, "tourism", valuesDict)
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
@@ -364,6 +301,16 @@ class Client:
             return jsonify({"error": "Nothing to update."}), 400
         return jsonify({"success": True}), 200
 
+    def build_query(self, country, category, valuesDict):
+        statement = "UPDATE `%s` SET " % category
+        argCount = 1
+        for key in valuesDict:
+            statement += "`%s`='%s'" % (key, valuesDict[key])
+            if argCount < len(valuesDict):
+                statement += ","
+            argCount += 1
+        statement += " WHERE `country` = '%s';" % country;
+        return statement
 
     def add_new_country(self, country):
         if not country:
