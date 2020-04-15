@@ -1,6 +1,7 @@
 import mysql.connector as mysql
 from flask import jsonify
 import traceback
+import time
 
 class Client:
     def __init__(self):
@@ -11,6 +12,12 @@ class Client:
             db="***"
         )
         self.cursor = self.driver.cursor(buffered=True)
+
+    def update_last_updated(self, country):
+        updateTime = int(time.time())
+        statement = "CALL updateLastUpdated(%s, %s);"
+        self.cursor.execute(statement, (country, updateTime))
+        self.driver.commit()
 
     def validate_key(self, key, country):
         statement = "SELECT country FROM api_publishers WHERE `api_key` = '%s' AND `country` = '%s';" % (key, country)
@@ -28,9 +35,15 @@ class Client:
             return True
         return False
 
+    def increment_request_counter(self, client_ip):
+        statement = "INSERT INTO requests (client_ip, requests) VALUES('%s', 1) ON DUPLICATE KEY UPDATE client_ip = '%s', requests = requests + 1;" % (client_ip, client_ip)
+        self.cursor.execute(statement)
+        self.driver.commit()
+
     def get_all_countries(self):
         final = []
-        self.cursor.execute("SELECT country FROM country")
+        self.cursor.execute("SELECT country FROM country;") # no need for prepared statement
+        self.driver.commit()
         for row in self.cursor.fetchall():
             final.append(str(row[0]))
         return final
@@ -48,6 +61,10 @@ class Client:
             "description": str(row[1]),
             "riskLevel": str(row[2])
         }
+        self.cursor.execute("SELECT * FROM `last_updated` WHERE `country` = '%s'" % country)
+        self.driver.commit()
+        if self.cursor.rowcount > 0:
+            final["lastUpdated"] = int(self.cursor.fetchall()[0][1])
         return final, 200
 
 
@@ -219,20 +236,17 @@ class Client:
 
     def update_country_info(self, country, description, riskLevel):
         final = {}
-        if not description:
-            return jsonify ({"error": "No such country '%s' in database" % country}), 400
-        statement = "UPDATE `country` SET `description` = '%s'" % description
-        if riskLevel:
-            if riskLevel in ['Low', 'Medium', 'High']:
-                statement += ", `risk_level` = '%s'" % riskLevel
-            else:
-                return jsonify({"error": "Invalid risk level. Must be one of: Low, Medium, High."}), 400
-        statement += " WHERE `country` = '%s';" % country;
-        self.cursor.execute(statement)
+        if not description or not riskLevel:
+            return jsonify ({"error": "Please specify a description and riskLevel."}), 400
+        if riskLevel not in ['Low', 'Medium', 'High']:
+            return jsonify({"error": "Invalid risk level. Must be one of: Low, Medium, High."}), 400
+        statement = "CALL updateCountryInfo(%s, %s, %s);"
+        values = (country, description, riskLevel)
+        self.cursor.execute(statement, values)
         self.driver.commit()
-        print(statement)
         if self.cursor.rowcount == 0:
             return jsonify({"error": "Nothing to update."}), 400
+        self.update_last_updated(country)
         return jsonify({"success": True}), 200
 
     def update_advisory(self, country, category, valuesDict):
@@ -242,82 +256,82 @@ class Client:
             return jsonify({"error": "Invalid advisory category. Must be one of: %s." % (', '.join(valid))}), 400
 
         statement = None
+        values = None
 
         if category == 'embassy':
-            if set(valuesDict.keys()).issubset(['address', 'phone']):
-                statement = self.build_query(country, "embassy", valuesDict)
+            if set(valuesDict.keys()) == set(['address', 'phone']):
+                statement = "CALL updateEmbassy(%s, %s, %s);"
+                values = (country, valuesDict['address'], valuesDict['phone'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'assistance':
-            if set(valuesDict.keys()).issubset(['emergencyPhone']):
-                statement = self.build_query(country, "assistance", valuesDict)
+            if set(valuesDict.keys()) == set(['emergencyPhone']):
+                statement = "CALL updateAssistance(%s, %s);"
+                values = (country, valuesDict['emergencyPhone'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'safetyandsecurity':
-            if set(valuesDict.keys()).issubset(['crimeRate', 'flightSafety', 'roadSafety']):
+            if set(valuesDict.keys()) == set(['crimeRate', 'flightSafety', 'roadSafety']):
                 for key in valuesDict:
                     if valuesDict[key] not in ['Low', 'Medium', 'High']:
                         return jsonify({"error": "Invalid risk level. Must be one of: Low, Medium, High."}), 400
-                statement = self.build_query(country, "safety_and_security", valuesDict)
+                statement = "CALL updateSafetyAndSecurity(%s, %s, %s, %s);"
+                values = (country, valuesDict['crimeRate'], valuesDict['flightSafety'], valuesDict['roadSafety'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'lawsandculture':
-            if set(valuesDict.keys()).issubset(['laws', 'culture']):
-                statement = self.build_query(country, "laws_and_culture", valuesDict)
+            if set(valuesDict.keys()) == set(['laws', 'culture']):
+                statement = "CALL updateLawsAndCulture(%s, %s, %s);"
+                values = (country, valuesDict['laws'], valuesDict['culture'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'naturaldisasterandclimate':
-            if set(valuesDict.keys()).issubset(['disaster', 'climate']):
-                statement = self.build_query(country, "disaster_and_climate", valuesDict)
+            if set(valuesDict.keys()) == set(['disaster', 'climate']):
+                statement = "CALL updateClimate(%s, %s, %s);"
+                values = (country, valuesDict['disaster'], valuesDict['climate'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'entryandexit':
-            if set(valuesDict.keys()).issubset(['requirements']):
-                statement = self.build_query(country, "entry_and_exit", valuesDict)
+            if set(valuesDict.keys()) == set(['requirements']):
+                statement = "CALL updateRequirements(%s, %s);"
+                values = (country, valuesDict['requirements'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'health':
-            if set(valuesDict.keys()).issubset(['diseases', 'vaccines']):
-                statement = self.build_query(country, "health", valuesDict)
+            if set(valuesDict.keys()) == set(['diseases', 'vaccines']):
+                statement = "CALL updateHealth(%s, %s, %s);"
+                values = (country, valuesDict['diseases'], valuesDict['vaccines'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
         elif category == 'tourism':
-            if set(valuesDict.keys()).issubset(['placesOfInterest', 'topActivites', 'industryDescription']):
-                statement = self.build_query(country, "tourism", valuesDict)
+            if set(valuesDict.keys()) == set(['placesOfInterest', 'topActivites', 'industryDescription']):
+                statement = "CALL updateTourism(%s, %s, %s, %s);"
+                values = (country, valuesDict['placesOfInterest'], valuesDict['topActivites'], valuesDict['industryDescription'])
             else:
                 return jsonify({"error": "Invalid keys for category: %s" % category}), 400
 
-        self.cursor.execute(statement)
+        self.cursor.execute(statement, values)
         self.driver.commit()
-        print(statement)
+
         if self.cursor.rowcount == 0:
             return jsonify({"error": "Nothing to update."}), 400
+        self.update_last_updated(country)
         return jsonify({"success": True}), 200
-
-    def build_query(self, country, category, valuesDict):
-        statement = "UPDATE `%s` SET " % category
-        argCount = 1
-        for key in valuesDict:
-            statement += "`%s`='%s'" % (key, valuesDict[key])
-            if argCount < len(valuesDict):
-                statement += ","
-            argCount += 1
-        statement += " WHERE `country` = '%s';" % country;
-        return statement
 
     def add_new_country(self, country):
         if not country:
             return jsonify({"error": "No country specified in request"}), 400
         try:
-            statement = "INSERT INTO `country` (`country`, `description`, `risk level`) VALUES ('%s', 'Default description', 'Low');" % country
-            self.cursor.execute(statement)
+            updateTime = int(time.time())
+            statement = "CALL createCountry(%s, %s);"
+            self.cursor.execute(statement, (country, updateTime))
             self.driver.commit()
             return jsonify({
                 "success": True,
@@ -334,7 +348,7 @@ class Client:
         if not country:
             return jsonify({"error": "No country specified in request"}), 400
         try:
-            statement = "DELETE FROM `country` WHERE `country`.`country` = '%s';" % country
+            statement = "CALL deleteCountry('%s');" % country
             self.cursor.execute(statement)
             self.driver.commit()
             if self.cursor.rowcount > 0:

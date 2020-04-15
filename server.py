@@ -19,18 +19,26 @@ def signal_handler(sig, frame):
     client.close()
     exit(0)
 
+def get_ip(req):
+    if 'X-Forwarded-For' in req.headers:
+        proxyData = req.headers['X-Forwarded-For']
+        return proxyData.split(',')[0]
+    else:
+        return req.remote_addr
+
+# For incrementing the "requests" table for each incoming request
+# to the API (for tracking requests per IP address).
+@app.before_request
+def default_handler():
+    client.increment_request_counter(get_ip(request))
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    auth = False
-    data = request.get_json()
-    if data and data.get("key") in keys:
-        auth = True
     return jsonify(
         {
         'name': 'Travel Advisory System',
         'version': VERSION,
-        'timestamp': time.time(),
-        'authenticated': auth
+        'timestamp': int(time.time()),
         }
     )
 
